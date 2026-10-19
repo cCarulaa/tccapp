@@ -1,6 +1,5 @@
 node_modules/
 .expo/
-.env
 __pycache__/
 *.pyc
 .DS_Store
