@@ -691,3 +691,6 @@ const s = StyleSheet.create({
 
 // o ActivityIndicator, Image etc. usam as cores acima; nenhum CSS externo é necessário.
 
+
+// o ActivityIndicator, Image etc. usam as cores acima; nenhum CSS externo é necessário.
+
