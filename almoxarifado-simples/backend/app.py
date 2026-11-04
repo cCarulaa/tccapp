@@ -1,19 +1,33 @@
+# ============================================================
+# app.py - API do Almoxarifado (Flask + MySQL)
+# É o "back-end": o aplicativo (App.tsx) não acessa o banco de
+# dados direto, ele pede tudo a esta API. Assim a senha do banco
+# fica só no servidor e as regras (quem pode o quê) ficam em um
+# lugar único.
+# ============================================================
 import os
 import secrets
 from functools import wraps
 
-import bcrypt
-import mysql.connector
+import bcrypt                  # criptografa e confere senhas
+import mysql.connector         # conexão com o banco MySQL
 from flask import Flask, jsonify, request, g
-from flask_cors import CORS
+from flask_cors import CORS    # permite que o app/navegador chame esta API
 
 app = Flask(__name__)
 CORS(app)
 
 # Para este projeto simples, os tokens ficam guardados na memória.
+# Cada login gera um token e este dicionário diz de quem ele é.
+# Vantagem: não precisa de tabela nem biblioteca extra. Desvantagem:
+# ao reiniciar o servidor, todo mundo precisa logar de novo.
 tokens = {}
 
 
+# Abre uma conexão nova com o MySQL.
+# Os dados vêm de variáveis de ambiente (os valores depois da vírgula
+# são o padrão para desenvolvimento), para não deixar senhas "fixas"
+# no código quando o projeto for para outro computador.
 def conectar():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "localhost"),
@@ -24,6 +38,9 @@ def conectar():
     )
 
 
+# Monta uma resposta de sucesso no formato padrão
+# {success, message, data}. Padronizar facilita o app: ele sempre
+# lê "data" quando deu certo.
 def resposta(data=None, message="OK", status=200):
     return jsonify({
         "success": True,
@@ -32,6 +49,7 @@ def resposta(data=None, message="OK", status=200):
     }), status
 
 
+# Resposta de erro no mesmo padrão. O app mostra "message" no Alert.
 def erro(message, status=400):
     return jsonify({
         "success": False,
@@ -39,6 +57,14 @@ def erro(message, status=400):
     }), status
 
 
+# Executa um SELECT e devolve os resultados.
+# - uma=True devolve só uma linha; False devolve a lista toda.
+# - dictionary=True devolve cada linha como dicionário (campo -> valor),
+#   que já vira JSON direto.
+# O "finally" garante que a conexão sempre é fechada, mesmo com erro,
+# evitando acumular conexões abertas no MySQL.
+# Os %s com "valores" são consultas parametrizadas: protegem contra
+# SQL Injection (nunca juntamos texto do usuário dentro do SQL).
 def buscar(sql, valores=(), uma=False):
     con = conectar()
     cur = con.cursor(dictionary=True)
@@ -52,6 +78,9 @@ def buscar(sql, valores=(), uma=False):
         con.close()
 
 
+# Executa INSERT, UPDATE ou DELETE. O commit() grava a alteração de
+# verdade no banco. Devolve o id criado (lastrowid), útil depois de
+# um INSERT para buscar o registro novo.
 def executar(sql, valores=()):
     con = conectar()
     cur = con.cursor()
@@ -64,12 +93,23 @@ def executar(sql, valores=()):
         con.close()
 
 
+# Descobre quem está fazendo a requisição. O app envia o token no
+# cabeçalho "Authorization: Bearer <token>"; aqui tiramos o
+# "Bearer " e procuramos o token no dicionário. Se não achar, devolve
+# None (ninguém logado).
 def usuario_atual():
     cabecalho = request.headers.get("Authorization", "")
     token = cabecalho.replace("Bearer ", "")
     return tokens.get(token)
 
 
+# Decorador que protege as rotas: coloque @precisa_login() em cima
+# de uma rota e ela só funciona para quem está logado;
+# @precisa_login(admin=True) exige também ser administrador.
+# Por que um decorador: a verificação fica escrita uma vez só, em vez
+# de repetida dentro de cada rota. O usuário é guardado em "g" para a
+# rota usar depois (ex.: registrar quem fez a movimentação).
+# Códigos HTTP: 401 = não logado, 403 = sem permissão.
 def precisa_login(admin=False):
     def decorador(funcao):
         @wraps(funcao)
@@ -88,6 +128,8 @@ def precisa_login(admin=False):
     return decorador
 
 
+# O MySQL devolve o preço como Decimal, que o JSON não consegue
+# converter. Aqui transformamos em float antes de responder.
 def produto_json(produto):
     if not produto:
         return None
@@ -95,6 +137,8 @@ def produto_json(produto):
     return produto
 
 
+# Busca um produto pelo id (ou None se não existir). Usada em várias
+# rotas para não repetir o mesmo SELECT.
 def ler_produto(id_produto):
     return buscar(
         "SELECT * FROM produtos WHERE id = %s",
@@ -103,6 +147,11 @@ def ler_produto(id_produto):
     )
 
 
+# Confere e limpa os dados de um produto antes de gravar no banco.
+# Serve tanto para cadastrar quanto para editar. Se algo estiver
+# errado, levanta ValueError com a mensagem; a rota captura e devolve
+# o erro ao app. O servidor valida mesmo que o app já valide, porque
+# nunca se deve confiar só no que vem de fora.
 def validar_produto(dados):
     nome = str(dados.get("nome", "")).strip()
     categoria = str(dados.get("categoria", "")).strip()
@@ -113,6 +162,7 @@ def validar_produto(dados):
     try:
         quantidade = int(dados.get("quantidade", 0))
         minimo = int(dados.get("estoque_minimo", 0))
+        # replace aceita preço digitado com vírgula (1,50)
         preco = float(str(dados.get("preco", 0)).replace(",", "."))
     except (ValueError, TypeError):
         raise ValueError("Quantidade, estoque mínimo ou preço inválido.")
@@ -130,11 +180,15 @@ def validar_produto(dados):
     }
 
 
+# Rota raiz: confirma que a API está no ar. Útil para testar no
+# navegador se o servidor e o IP estão corretos.
 @app.get("/")
 def inicio():
     return resposta({"api": "Almoxarifado", "online": True})
 
 
+# Verifica também a conexão com o MySQL (um SELECT 1 simples).
+# Ajuda a descobrir se um problema é do Flask ou do banco.
 @app.get("/api/health")
 def health():
     try:
@@ -144,6 +198,12 @@ def health():
         return erro("API iniciou, mas houve erro no MySQL: " + str(e), 500)
 
 
+# Login. Responde em dois endereços (/api/login e /api/auth/login)
+# para aceitar chamadas dos dois estilos usados no projeto.
+# Passos: valida os campos, busca o usuário pelo e-mail, confere a
+# senha com bcrypt e gera um token aleatório (secrets, que é seguro).
+# A mensagem de erro é a mesma para e-mail errado e senha errada,
+# para não revelar quais e-mails existem.
 @app.post("/api/login")
 @app.post("/api/auth/login")
 def login():
@@ -163,6 +223,9 @@ def login():
     if not usuario:
         return erro("E-mail ou senha incorretos.", 401)
 
+    # No banco a senha está guardada como hash (nunca em texto
+    # puro); o bcrypt compara a digitada com o hash. O try evita
+    # quebrar caso o valor salvo não seja um hash válido.
     try:
         senha_certa = bcrypt.checkpw(
             senha.encode("utf-8"),
@@ -175,6 +238,7 @@ def login():
         return erro("E-mail ou senha incorretos.", 401)
 
     token = secrets.token_hex(24)
+    # Guardamos só o necessário; a senha nunca sai daqui.
     dados_usuario = {
         "id": usuario["id"],
         "email": usuario["email"],
@@ -185,6 +249,11 @@ def login():
     return resposta({"token": token, "user": dados_usuario}, "Login realizado.")
 
 
+# Cria uma conta nova. Sempre entra como tipo "usuario" (nunca admin),
+# para ninguém se promover sozinho. A senha é transformada em hash
+# com bcrypt (gensalt gera um "tempero" aleatório). Se o e-mail já
+# existir, o MySQL dispara IntegrityError e respondemos 409
+# (conflito).
 @app.post("/api/register")
 @app.post("/api/auth/register")
 def registrar():
@@ -215,6 +284,8 @@ def registrar():
         return erro("Erro ao criar usuário: " + str(e), 500)
 
 
+# Logout: apaga o token da memória, então ele deixa de valer.
+# O pop com None não dá erro se o token já não existir.
 @app.post("/api/auth/logout")
 @precisa_login()
 def logout():
@@ -224,12 +295,16 @@ def logout():
     return resposta(message="Logout realizado.")
 
 
+# Devolve os dados de quem está logado. Serve para o app conferir
+# se o token ainda é válido.
 @app.get("/api/auth/me")
 @precisa_login()
 def me():
     return resposta(g.usuario)
 
 
+# Lista todos os produtos, em ordem alfabética (ORDER BY nome).
+# Qualquer usuário logado pode ver.
 @app.get("/api/produtos")
 @precisa_login()
 def listar_produtos():
@@ -237,6 +312,8 @@ def listar_produtos():
     return resposta([produto_json(p) for p in produtos])
 
 
+# Mostra um único produto. <int:id_produto> já garante que o id da
+# URL é um número. 404 = não encontrado.
 @app.get("/api/produtos/<int:id_produto>")
 @precisa_login()
 def ver_produto(id_produto):
@@ -246,6 +323,8 @@ def ver_produto(id_produto):
     return resposta(produto_json(produto))
 
 
+# Cadastra produto (só admin). Valida os dados, insere no banco e
+# devolve o produto criado com status 201 (criado).
 @app.post("/api/produtos")
 @precisa_login(admin=True)
 def adicionar_produto():
@@ -264,6 +343,10 @@ def adicionar_produto():
         return erro(str(e))
 
 
+# Edita produto (só admin). Guardamos o produto "antigo" antes de
+# atualizar para comparar a quantidade: se o estoque mudou pela
+# edição, registramos uma movimentação do tipo "Edição", assim o
+# histórico não perde essa alteração.
 @app.put("/api/produtos/<int:id_produto>")
 @precisa_login(admin=True)
 def editar_produto(id_produto):
@@ -296,6 +379,9 @@ def editar_produto(id_produto):
         return erro(str(e))
 
 
+# Exclui produto (só admin). Se o produto já tem movimentações, o
+# banco recusa (chave estrangeira) e respondemos 409 com uma
+# explicação, em vez de apagar o histórico.
 @app.delete("/api/produtos/<int:id_produto>")
 @precisa_login(admin=True)
 def excluir_produto(id_produto):
@@ -312,6 +398,12 @@ def excluir_produto(id_produto):
         )
 
 
+# Função comum de entrada e retirada de estoque.
+# Usa TRANSAÇÃO: atualizar a quantidade e registrar a movimentação
+# precisam acontecer juntas; se uma falhar, o rollback desfaz tudo.
+# O "FOR UPDATE" trava a linha do produto enquanto calculamos, para
+# duas retiradas ao mesmo tempo não passarem do estoque disponível.
+# Retirada maior que o estoque é recusada.
 def mudar_estoque(id_produto, quantidade, tipo):
     con = conectar()
     cur = con.cursor(dictionary=True)
@@ -357,6 +449,8 @@ def mudar_estoque(id_produto, quantidade, tipo):
         con.close()
 
 
+# Entrada de estoque (só admin). Valida a quantidade (inteiro maior
+# que zero) e chama a função comum com o tipo "Entrada".
 @app.post("/api/produtos/<int:id_produto>/adicionar")
 @precisa_login(admin=True)
 def entrada_estoque(id_produto):
@@ -370,6 +464,9 @@ def entrada_estoque(id_produto):
     return mudar_estoque(id_produto, quantidade, "Entrada")
 
 
+# Retirada de estoque (qualquer usuário logado). Mesma validação;
+# usa o tipo "Retirada". A permissão é diferente da entrada porque
+# funcionários comuns precisam pegar material no dia a dia.
 @app.post("/api/produtos/<int:id_produto>/retirar")
 @precisa_login()
 def retirada_estoque(id_produto):
@@ -383,6 +480,10 @@ def retirada_estoque(id_produto):
     return mudar_estoque(id_produto, quantidade, "Retirada")
 
 
+# Histórico de movimentações. O JOIN junta as tabelas para devolver o
+# nome do produto e o e-mail do usuário (e não só os ids), e o
+# DATE_FORMAT entrega a data como texto simples. O ORDER BY mostra as
+# mais recentes primeiro.
 @app.get("/api/movimentacoes")
 @precisa_login()
 def listar_movimentacoes():
@@ -398,6 +499,8 @@ def listar_movimentacoes():
     return resposta(movimentos)
 
 
+# Lista os usuários (só admin). Seleciona apenas id, e-mail e tipo,
+# nunca a senha, mesmo ela sendo um hash.
 @app.get("/api/usuarios")
 @precisa_login(admin=True)
 def listar_usuarios():
@@ -405,5 +508,9 @@ def listar_usuarios():
     return resposta(usuarios)
 
 
+# Só roda quando o arquivo é executado direto (python app.py).
+# host='0.0.0.0' deixa o celular da mesma rede acessar a API pelo IP
+# do computador; debug=True recarrega sozinho ao editar o código e
+# mostra erros detalhados (use só em desenvolvimento).
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
