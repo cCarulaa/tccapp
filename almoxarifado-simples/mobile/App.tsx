@@ -1,12 +1,21 @@
+
 import React, {useEffect, useState} from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Pressable, SafeAreaView,
-  StyleSheet, Text, TextInput, View
+  ActivityIndicator, Alert, FlatList, Image, Platform, Pressable, SafeAreaView,
+  ScrollView, StatusBar, StyleSheet, Text, TextInput, View
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API = 'http://10.154.20.106:5000/api';
 
+// cores do senai igual do outro tcc
+const AZUL = '#0d1860';
+const LARANJA = '#f7931e';
+const FUNDO = '#edf1f5';
+const BORDA = '#d5dae1';
+
+// typeScript ajuda o editor a avisar de erros (ex: digitar o nome de um
+// campo errado) antes de rodar o app.
 type User = {id:number; email:string; tipo:'admin'|'usuario'};
 type Product = {
   id:number; nome:string; categoria:string; quantidade:number;
@@ -17,6 +26,7 @@ type Movement = {
   usuario:string; data_hora:string;
 };
 
+// função para falar com a API
 async function api(path:string, options:any={}, token=''){
   const headers:any = {'Content-Type':'application/json'};
   if(token) headers.Authorization = 'Bearer ' + token;
@@ -28,11 +38,13 @@ async function api(path:string, options:any={}, token=''){
   return body.data;
 }
 
+// decide qual tela mostrar (carregando, login ou o app principal)
 export default function App(){
   const [token,setToken] = useState('');
   const [user,setUser] = useState<User|null>(null);
   const [loading,setLoading] = useState(true);
 
+  // serve pra salvar os dados 
   useEffect(()=>{
     async function abrir(){
       const t = await AsyncStorage.getItem('token');
@@ -56,6 +68,7 @@ export default function App(){
     setUser(dados.user);
   }
 
+  // encerra a sessão
   async function sair(){
     try{
       if(token) await api('/auth/logout',{method:'POST'},token);
@@ -65,7 +78,7 @@ export default function App(){
     setUser(null);
   }
 
-  if(loading) return <View style={s.centro}><ActivityIndicator size="large"/></View>;
+  if(loading) return <View style={s.centro}><ActivityIndicator size="large" color={AZUL}/></View>;
   if(!token || !user) return <Login entrar={entrar}/>;
   return <Principal user={user} token={token} sair={sair}/>;
 }
@@ -74,6 +87,7 @@ function Login({entrar}:{entrar:(e:string,s:string)=>Promise<void>}){
   const [email,setEmail] = useState('');
   const [senha,setSenha] = useState('');
 
+  // valida os campos antes de da api
   async function fazerLogin(){
     if(!email || !senha) return Alert.alert('Atenção','Preencha e-mail e senha.');
     try{await entrar(email.trim(),senha);}
@@ -81,73 +95,98 @@ function Login({entrar}:{entrar:(e:string,s:string)=>Promise<void>}){
   }
 
   return (
-    <SafeAreaView style={s.tela}>
-      <View style={s.caixa}>
-        <Text style={s.titulo}>Almoxarifado</Text>
-        <Text>E-mail</Text>
+    <SafeAreaView style={s.login}>
+      <Image source={require('./assets/fotologin.jpg')} style={s.fotoLogin}/>
+      <View style={s.caixaLogin}>
+        <Image source={require('./assets/logosenai.png')} style={s.logo}/>
+        <Text style={s.tituloLogin}>Login</Text>
+
+        <Text style={s.label}>Usuário</Text>
         <TextInput style={s.input} value={email} onChangeText={setEmail}
           autoCapitalize="none" keyboardType="email-address"/>
-        <Text>Senha</Text>
+        <Text style={s.label}>Senha</Text>
         <TextInput style={s.input} value={senha} onChangeText={setSenha}
           secureTextEntry/>
-        <Botao texto="Entrar" onPress={fazerLogin}/>
+        <Botao texto="Entrar" onPress={fazerLogin} cheio/>
       </View>
     </SafeAreaView>
   );
 }
 
+// tela principal
 function Principal({user,token,sair}:{user:User;token:string;sair:()=>Promise<void>}){
-  const [pagina,setPagina] = useState('inicio');
+  const [pagina,setPagina] = useState('produtos');
   const [produtos,setProdutos] = useState<Product[]>([]);
   const [movimentos,setMovimentos] = useState<Movement[]>([]);
   const [usuarios,setUsuarios] = useState<User[]>([]);
+  const admin = user.tipo==='admin';
 
+  // busca os dados na api
   async function carregar(){
     try{
       setProdutos((await api('/produtos',{},token)) || []);
       if(pagina==='movimentos')
         setMovimentos((await api('/movimentacoes',{},token)) || []);
-      if(pagina==='usuarios' && user.tipo==='admin')
+      if(pagina==='usuarios' && admin)
         setUsuarios((await api('/usuarios',{},token)) || []);
     }catch(e:any){Alert.alert('Erro',e.message);}
   }
 
+  // recarrega os dados quando o usuário troca de página
   useEffect(()=>{carregar();},[pagina]);
 
   return (
     <SafeAreaView style={s.tela}>
       <View style={s.topo}>
-        <Text>{user.email}</Text>
-        <Pressable onPress={sair}><Text style={{color:'red'}}>Sair</Text></Pressable>
+        <Text style={s.marca}>Almoxarifado</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ItemMenu texto="Início" onPress={()=>setPagina('inicio')}/>
+          <ItemMenu texto="Produtos" onPress={()=>setPagina('produtos')}/>
+          {admin && <ItemMenu texto="Novo Produto" onPress={()=>setPagina('novo')}/>}
+          <ItemMenu texto="Movimentação" onPress={()=>setPagina('movimentos')}/>
+          {admin && <ItemMenu texto="Usuários" onPress={()=>setPagina('usuarios')}/>}
+          <ItemMenu texto="Sair" onPress={sair} laranja/>
+        </ScrollView>
       </View>
 
       <View style={{flex:1}}>
         {pagina==='inicio' && <Inicio produtos={produtos} irProdutos={()=>setPagina('produtos')}/>}
         {pagina==='produtos' &&
-          <Produtos produtos={produtos} token={token} admin={user.tipo==='admin'} atualizar={carregar}/>
+          <Produtos produtos={produtos} token={token} admin={admin} atualizar={carregar}/>
+        }
+        {pagina==='novo' &&
+          <FormularioProduto token={token} produto={null}
+            voltar={()=>setPagina('produtos')} atualizar={carregar}/>
         }
         {pagina==='movimentos' && <Movimentacoes dados={movimentos}/>}
         {pagina==='usuarios' && <ListaUsuarios dados={usuarios}/>}
-      </View>
-
-      <View style={s.menu}>
-        <ItemMenu texto="Início" onPress={()=>setPagina('inicio')}/>
-        <ItemMenu texto="Produtos" onPress={()=>setPagina('produtos')}/>
-        <ItemMenu texto="Movimentos" onPress={()=>setPagina('movimentos')}/>
-        {user.tipo==='admin' && <ItemMenu texto="Usuários" onPress={()=>setPagina('usuarios')}/>}
       </View>
     </SafeAreaView>
   );
 }
 
+function Cabecalho({etiqueta,titulo}:{etiqueta?:string;titulo:string}){
+  return (
+    <View style={{marginBottom:12}}>
+      {etiqueta && <Text style={s.etiqueta}>{etiqueta}</Text>}
+      <Text style={s.titulo}>{titulo}</Text>
+    </View>
+  );
+}
+
+// pagina inicial
 function Inicio({produtos,irProdutos}:{produtos:Product[];irProdutos:()=>void}){
   const baixos = produtos.filter(p=>p.estoque_minimo>0 && p.quantidade<=p.estoque_minimo).length;
   return (
-    <View style={s.caixa}>
-      <Text style={s.titulo}>Início</Text>
-      <Text>Quantidade de produtos cadastrados: {produtos.length}</Text>
-      <Text style={{marginTop:8}}>Produtos com estoque baixo: {baixos}</Text>
-      <Botao texto="Ver produtos" onPress={irProdutos}/>
+    <View style={s.pagina}>
+      <Cabecalho titulo="Início"/>
+      <View style={s.item}>
+        <Text>Quantidade de produtos cadastrados: {produtos.length}</Text>
+        <Text style={{marginTop:8}}>Produtos com estoque baixo: {baixos}</Text>
+        <View style={{marginTop:10}}>
+          <Botao texto="Ver produtos" onPress={irProdutos}/>
+        </View>
+      </View>
     </View>
   );
 }
@@ -157,24 +196,19 @@ function Produtos({
 }:{
   produtos:Product[];token:string;admin:boolean;atualizar:()=>void
 }){
-  const [novo,setNovo] = useState(false);
   const [editando,setEditando] = useState<Product|null>(null);
 
-  if(novo || editando){
+  if(editando){
     return <FormularioProduto
       token={token} produto={editando}
-      voltar={()=>{setNovo(false);setEditando(null);}}
+      voltar={()=>setEditando(null)}
       atualizar={atualizar}
     />;
   }
 
   return (
     <View style={s.pagina}>
-      <View style={s.linha}>
-        <Text style={s.titulo}>Produtos</Text>
-        {admin && <Botao texto="+ Produto" onPress={()=>setNovo(true)}/>}
-      </View>
-
+      <Cabecalho titulo="Produtos Cadastrados"/>
       <FlatList
         data={produtos}
         keyExtractor={p=>String(p.id)}
@@ -197,6 +231,7 @@ function Produto({
 }){
   const [qtd,setQtd] = useState('1');
 
+  // da entrada ou retira estoque
   async function estoque(tipo:'adicionar'|'retirar'){
     const n = Number(qtd);
     if(!Number.isInteger(n) || n<=0) return Alert.alert('Digite uma quantidade válida.');
@@ -209,6 +244,7 @@ function Produto({
     }catch(e:any){Alert.alert('Erro',e.message);}
   }
 
+  // exclui o produto
   async function excluir(){
     try{
       await api(`/produtos/${produto.id}`,{method:'DELETE'},token);
@@ -216,9 +252,14 @@ function Produto({
     }catch(e:any){Alert.alert('Erro',e.message);}
   }
 
+  const baixo = produto.estoque_minimo>0 && produto.quantidade<=produto.estoque_minimo;
+
   return (
     <View style={s.item}>
-      <Text style={s.nome}>{produto.nome}</Text>
+      <View style={s.linhaEntre}>
+        <Text style={s.nome}>{produto.nome}</Text>
+        {baixo && <Text style={s.selo}>estoque baixo</Text>}
+      </View>
       <Text>Categoria: {produto.categoria}</Text>
       <Text>Estoque: {produto.quantidade}</Text>
       <Text>Preço: R$ {Number(produto.preco||0).toFixed(2)}</Text>
@@ -227,10 +268,12 @@ function Produto({
         keyboardType="number-pad" placeholder="Quantidade"/>
 
       <View style={s.linha}>
+        {/* só admin dá entrada, edita e exclui mas qualquer usuário retira */}
         {admin && <Botao texto="Entrada" onPress={()=>estoque('adicionar')}/>}
         <Botao texto="Retirar" onPress={()=>estoque('retirar')}/>
-        {admin && <Botao texto="Editar" onPress={editar}/>}
-        {admin && <Botao texto="Excluir" onPress={()=>
+        {admin && <Botao texto="Editar" claro onPress={editar}/>}
+        {/* pede confirmação antes de excluir, porque não dá para desfazer */}
+        {admin && <Botao texto="Excluir" claro onPress={()=>
           Alert.alert('Excluir produto?','',[
             {text:'Cancelar'},
             {text:'Excluir',style:'destructive',onPress:excluir}
@@ -241,6 +284,7 @@ function Produto({
   );
 }
 
+// formulario usado para CADASTRAR e para EDITAR
 function FormularioProduto({
   token,produto,voltar,atualizar
 }:{
@@ -274,38 +318,36 @@ function FormularioProduto({
   }
 
   return (
-    <View style={s.pagina}>
-      <Botao texto="Voltar" onPress={voltar}/>
-      <Text style={s.titulo}>{produto?'Editar produto':'Novo produto'}</Text>
+    <ScrollView style={s.pagina} keyboardShouldPersistTaps="handled">
+      <Cabecalho etiqueta="CADASTRO" titulo={produto?'Editar item':'Novo item'}/>
 
-      <FlatList
-        data={[]}
-        ListHeaderComponent={
-          <View>
-            <Text>Nome</Text>
-            <TextInput style={s.input} value={nome} onChangeText={setNome}/>
-            <Text>Categoria</Text>
-            <TextInput style={s.input} value={categoria} onChangeText={setCategoria}/>
-            <Text>Quantidade</Text>
-            <TextInput style={s.input} value={quantidade} onChangeText={setQuantidade} keyboardType="number-pad"/>
-            <Text>Estoque mínimo</Text>
-            <TextInput style={s.input} value={minimo} onChangeText={setMinimo} keyboardType="number-pad"/>
-            <Text>Preço</Text>
-            <TextInput style={s.input} value={preco} onChangeText={setPreco} keyboardType="decimal-pad"/>
-            <Text>Foto URL (opcional)</Text>
-            <TextInput style={s.input} value={foto} onChangeText={setFoto} autoCapitalize="none"/>
-            <Botao texto="Salvar" onPress={salvar}/>
-          </View>
-        }
-      />
-    </View>
+      <Text style={s.label}>Nome</Text>
+      <TextInput style={s.input} value={nome} onChangeText={setNome}/>
+      <Text style={s.label}>Categoria</Text>
+      <TextInput style={s.input} value={categoria} onChangeText={setCategoria}/>
+      <Text style={s.label}>Quantidade em estoque</Text>
+      <TextInput style={s.input} value={quantidade} onChangeText={setQuantidade} keyboardType="number-pad"/>
+      <Text style={s.label}>Estoque mínimo</Text>
+      <TextInput style={s.input} value={minimo} onChangeText={setMinimo} keyboardType="number-pad"/>
+      <Text style={s.label}>Preço</Text>
+      <TextInput style={s.input} value={preco} onChangeText={setPreco} keyboardType="decimal-pad" placeholder="0,00"/>
+      <Text style={s.label}>Foto URL (opcional)</Text>
+      <TextInput style={s.input} value={foto} onChangeText={setFoto} autoCapitalize="none"/>
+
+      <View style={[s.linha,{marginTop:8,marginBottom:30}]}>
+        <Botao texto="Voltar" claro onPress={voltar}/>
+        <Botao texto="Salvar item" onPress={salvar}/>
+      </View>
+    </ScrollView>
   );
 }
 
+// Histórico de movimentações (entradas, retiradas e edições),
+// que a API já devolve ordenado do mais recente para o mais antigo.
 function Movimentacoes({dados}:{dados:Movement[]}){
   return (
     <View style={s.pagina}>
-      <Text style={s.titulo}>Movimentações</Text>
+      <Cabecalho titulo="Movimentações"/>
       <FlatList
         data={dados}
         keyExtractor={m=>String(m.id)}
@@ -324,17 +366,19 @@ function Movimentacoes({dados}:{dados:Movement[]}){
   );
 }
 
+// Lista de usuários cadastrados (só aparece para o admin).
 function ListaUsuarios({dados}:{dados:User[]}){
   return (
     <View style={s.pagina}>
-      <Text style={s.titulo}>Usuários</Text>
+      <Cabecalho etiqueta="ADMINISTRADOR" titulo="Usuários cadastrados"/>
       <FlatList
         data={dados}
         keyExtractor={u=>String(u.id)}
         renderItem={({item})=>
           <View style={s.item}>
-            <Text>{item.email}</Text>
-            <Text>Tipo: {item.tipo}</Text>
+            <Text style={s.nome}>{item.email}</Text>
+            {/* Só o tipo "admin" ganha o selo laranja */}
+            <Text style={item.tipo==='admin' ? s.selo : undefined}>{item.tipo}</Text>
           </View>
         }
       />
@@ -342,31 +386,68 @@ function ListaUsuarios({dados}:{dados:User[]}){
   );
 }
 
-function Botao({texto,onPress}:{texto:string;onPress:()=>void}){
+// Botão reutilizável do app, para todos terem o mesmo visual.
+// claro = botão branco com borda; cheio = ocupa a largura toda.
+// Usamos Pressable (e não Button) porque o Button nativo quase não
+// aceita personalização de cor e formato.
+function Botao({texto,onPress,claro,cheio}:{texto:string;onPress:()=>void;claro?:boolean;cheio?:boolean}){
   return (
-    <Pressable style={s.botao} onPress={onPress}>
-      <Text style={s.textoBotao}>{texto}</Text>
+    <Pressable
+      style={[s.botao, claro && s.botaoClaro, cheio && {alignSelf:'stretch',alignItems:'center'}]}
+      onPress={onPress}>
+      <Text style={[s.textoBotao, claro && {color:AZUL}]}>{texto}</Text>
     </Pressable>
   );
 }
 
-function ItemMenu({texto,onPress}:{texto:string;onPress:()=>void}){
-  return <Pressable style={s.menuItem} onPress={onPress}><Text>{texto}</Text></Pressable>;
+// Botão branco do menu do topo; "laranja" é usado só no Sair,
+// para destacá-lo dos demais.
+function ItemMenu({texto,onPress,laranja}:{texto:string;onPress:()=>void;laranja?:boolean}){
+  return (
+    <Pressable style={[s.menuItem, laranja && {backgroundColor:LARANJA}]} onPress={onPress}>
+      <Text style={[s.textoMenu, laranja && {color:'#fff'}]}>{texto}</Text>
+    </Pressable>
+  );
 }
 
+// Todos os estilos ficam juntos aqui embaixo (StyleSheet.create),
+// para o código das telas ficar limpo e o visual ser fácil de achar
+// e ajustar.
 const s = StyleSheet.create({
-  tela:{flex:1,backgroundColor:'#f3f3f3'},
+  tela:{flex:1,backgroundColor:FUNDO},
   centro:{flex:1,alignItems:'center',justifyContent:'center'},
-  caixa:{padding:20},
-  topo:{backgroundColor:'#fff',padding:14,flexDirection:'row',justifyContent:'space-between'},
-  titulo:{fontSize:23,fontWeight:'bold',marginVertical:12},
-  pagina:{flex:1,padding:12},
-  input:{borderWidth:1,borderColor:'#bbb',borderRadius:5,backgroundColor:'#fff',padding:9,marginVertical:7},
-  botao:{backgroundColor:'#2367c9',padding:10,margin:3,borderRadius:5,alignSelf:'flex-start'},
+
+  // Login
+  login:{flex:1,backgroundColor:'#fff'},
+  fotoLogin:{width:'100%',height:230,resizeMode:'cover'},
+  caixaLogin:{padding:28,paddingTop:20},
+  // marginLeft negativo compensa a margem transparente do PNG da logo
+  logo:{width:'100%',height:120,resizeMode:'contain',marginLeft:'-11%'},
+  tituloLogin:{fontSize:26,fontWeight:'bold',marginTop:6,marginBottom:20,color:'#111'},
+
+  // Topo azul + menu em botões brancos.
+  // No Android soma a altura da barra de status ao espaço do topo,
+  // para o conteúdo não ficar embaixo da hora e dos ícones.
+  topo:{backgroundColor:AZUL,paddingTop:12 + (Platform.OS==='android' ? (StatusBar.currentHeight || 0) : 0),paddingBottom:10,paddingHorizontal:14},
+  marca:{color:'#fff',fontSize:19,fontWeight:'bold',marginBottom:10},
+  menuItem:{backgroundColor:'#fff',paddingVertical:7,paddingHorizontal:12,borderRadius:6,marginRight:6},
+  textoMenu:{color:AZUL,fontWeight:'bold'},
+
+  // Conteúdo
+  pagina:{flex:1,padding:16},
+  etiqueta:{color:LARANJA,fontSize:12,fontWeight:'bold'},
+  titulo:{fontSize:24,fontWeight:'bold',color:AZUL},
+  label:{fontWeight:'bold',color:'#111',marginTop:8},
+  input:{borderWidth:1,borderColor:BORDA,borderRadius:6,backgroundColor:'#fff',padding:10,marginVertical:6},
+
+  botao:{backgroundColor:AZUL,paddingVertical:10,paddingHorizontal:14,margin:3,borderRadius:6,alignSelf:'flex-start'},
+  botaoClaro:{backgroundColor:'#fff',borderWidth:1,borderColor:BORDA},
   textoBotao:{color:'#fff',fontWeight:'bold'},
-  item:{backgroundColor:'#fff',padding:12,marginBottom:10,borderWidth:1,borderColor:'#ddd',borderRadius:5},
-  nome:{fontSize:17,fontWeight:'bold',marginBottom:4},
+
+  item:{backgroundColor:'#fff',padding:14,marginBottom:10,borderWidth:1,borderColor:BORDA,borderRadius:8},
+  nome:{fontSize:17,fontWeight:'bold',marginBottom:4,color:'#111'},
+  selo:{backgroundColor:LARANJA,color:'#fff',fontWeight:'bold',fontSize:12,
+    paddingVertical:2,paddingHorizontal:10,borderRadius:10,overflow:'hidden',alignSelf:'flex-start'},
   linha:{flexDirection:'row',alignItems:'center',flexWrap:'wrap'},
-  menu:{height:52,backgroundColor:'#fff',flexDirection:'row',justifyContent:'space-around',alignItems:'center',borderTopWidth:1,borderColor:'#ccc'},
-  menuItem:{padding:8}
+  linhaEntre:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}
 });
