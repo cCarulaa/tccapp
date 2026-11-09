@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API = 'http://10.154.20.106:5000/api';
+const API = 'http://10.154.20.28:5000/api';
 
 // cores do senai igual do outro tcc
 const AZUL = '#0d1860';
@@ -14,8 +14,6 @@ const LARANJA = '#f7931e';
 const FUNDO = '#edf1f5';
 const BORDA = '#d5dae1';
 
-// typeScript ajuda o editor a avisar de erros (ex: digitar o nome de um
-// campo errado) antes de rodar o app.
 type User = {id:number; email:string; tipo:'admin'|'usuario'};
 type Product = {
   id:number; nome:string; categoria:string; quantidade:number;
@@ -268,7 +266,6 @@ function Produto({
         keyboardType="number-pad" placeholder="Quantidade"/>
 
       <View style={s.linha}>
-        {/* só admin dá entrada, edita e exclui mas qualquer usuário retira */}
         {admin && <Botao texto="Entrada" onPress={()=>estoque('adicionar')}/>}
         <Botao texto="Retirar" onPress={()=>estoque('retirar')}/>
         {admin && <Botao texto="Editar" claro onPress={editar}/>}
@@ -284,7 +281,7 @@ function Produto({
   );
 }
 
-// formulario usado para CADASTRAR e para EDITAR
+// formulario usado para cadastrar e editar
 function FormularioProduto({
   token,produto,voltar,atualizar
 }:{
@@ -342,8 +339,7 @@ function FormularioProduto({
   );
 }
 
-// Histórico de movimentações (entradas, retiradas e edições),
-// que a API já devolve ordenado do mais recente para o mais antigo.
+// movimentações (entradas, retiradas e edições)
 function Movimentacoes({dados}:{dados:Movement[]}){
   return (
     <View style={s.pagina}>
@@ -366,7 +362,7 @@ function Movimentacoes({dados}:{dados:Movement[]}){
   );
 }
 
-// Lista de usuários cadastrados (só aparece para o admin).
+// usuarios cadastrados (só aparece para o admin)
 function ListaUsuarios({dados}:{dados:User[]}){
   return (
     <View style={s.pagina}>
@@ -377,19 +373,14 @@ function ListaUsuarios({dados}:{dados:User[]}){
         renderItem={({item})=>
           <View style={s.item}>
             <Text style={s.nome}>{item.email}</Text>
-            {/* Só o tipo "admin" ganha o selo laranja */}
             <Text style={item.tipo==='admin' ? s.selo : undefined}>{item.tipo}</Text>
           </View>
         }
       />
     </View>
   );
-}
+};
 
-// Botão reutilizável do app, para todos terem o mesmo visual.
-// claro = botão branco com borda; cheio = ocupa a largura toda.
-// Usamos Pressable (e não Button) porque o Button nativo quase não
-// aceita personalização de cor e formato.
 function Botao({texto,onPress,claro,cheio}:{texto:string;onPress:()=>void;claro?:boolean;cheio?:boolean}){
   return (
     <Pressable
@@ -400,8 +391,6 @@ function Botao({texto,onPress,claro,cheio}:{texto:string;onPress:()=>void;claro?
   );
 }
 
-// Botão branco do menu do topo; "laranja" é usado só no Sair,
-// para destacá-lo dos demais.
 function ItemMenu({texto,onPress,laranja}:{texto:string;onPress:()=>void;laranja?:boolean}){
   return (
     <Pressable style={[s.menuItem, laranja && {backgroundColor:LARANJA}]} onPress={onPress}>
@@ -410,30 +399,23 @@ function ItemMenu({texto,onPress,laranja}:{texto:string;onPress:()=>void;laranja
   );
 }
 
-// Todos os estilos ficam juntos aqui embaixo (StyleSheet.create),
-// para o código das telas ficar limpo e o visual ser fácil de achar
-// e ajustar.
+// tudo de estilo aqui
 const s = StyleSheet.create({
   tela:{flex:1,backgroundColor:FUNDO},
   centro:{flex:1,alignItems:'center',justifyContent:'center'},
 
-  // Login
+  // login
   login:{flex:1,backgroundColor:'#fff'},
   fotoLogin:{width:'100%',height:230,resizeMode:'cover'},
   caixaLogin:{padding:28,paddingTop:20},
-  // marginLeft negativo compensa a margem transparente do PNG da logo
   logo:{width:'100%',height:120,resizeMode:'contain',marginLeft:'-11%'},
   tituloLogin:{fontSize:26,fontWeight:'bold',marginTop:6,marginBottom:20,color:'#111'},
 
-  // Topo azul + menu em botões brancos.
-  // No Android soma a altura da barra de status ao espaço do topo,
-  // para o conteúdo não ficar embaixo da hora e dos ícones.
   topo:{backgroundColor:AZUL,paddingTop:12 + (Platform.OS==='android' ? (StatusBar.currentHeight || 0) : 0),paddingBottom:10,paddingHorizontal:14},
   marca:{color:'#fff',fontSize:19,fontWeight:'bold',marginBottom:10},
   menuItem:{backgroundColor:'#fff',paddingVertical:7,paddingHorizontal:12,borderRadius:6,marginRight:6},
   textoMenu:{color:AZUL,fontWeight:'bold'},
 
-  // Conteúdo
   pagina:{flex:1,padding:16},
   etiqueta:{color:LARANJA,fontSize:12,fontWeight:'bold'},
   titulo:{fontSize:24,fontWeight:'bold',color:AZUL},
