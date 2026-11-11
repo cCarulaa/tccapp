@@ -1,4 +1,3 @@
-
 import React, {useEffect, useState} from 'react';
 import {
   ActivityIndicator, Alert, FlatList, Image, Platform, Pressable, SafeAreaView,
@@ -6,7 +5,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API = 'http://10.154.20.28:5000/api';
+const API = 'http://10.154.20.27:5000/api';
 
 // cores do senai igual do outro tcc
 const AZUL = '#0d1860';
@@ -17,7 +16,7 @@ const BORDA = '#d5dae1';
 type User = {id:number; email:string; tipo:'admin'|'usuario'};
 type Product = {
   id:number; nome:string; categoria:string; quantidade:number;
-  estoque_minimo:number; preco:number; foto?:string;
+  estoque_minimo:number; preco:number;
 };
 type Movement = {
   id:number; produto:string; tipo:string; quantidade:number;
@@ -292,7 +291,6 @@ function FormularioProduto({
   const [quantidade,setQuantidade] = useState(String(produto?.quantidade ?? 0));
   const [minimo,setMinimo] = useState(String(produto?.estoque_minimo ?? 0));
   const [preco,setPreco] = useState(String(produto?.preco ?? 0));
-  const [foto,setFoto] = useState(produto?.foto || '');
 
   async function salvar(){
     if(!nome.trim() || !categoria.trim())
@@ -301,7 +299,7 @@ function FormularioProduto({
     const dados = {
       nome:nome.trim(),categoria:categoria.trim(),
       quantidade:Number(quantidade),estoque_minimo:Number(minimo),
-      preco:Number(preco.replace(',','.')),foto:foto || null
+      preco:Number(preco.replace(',','.'))
     };
 
     try{
@@ -328,8 +326,6 @@ function FormularioProduto({
       <TextInput style={s.input} value={minimo} onChangeText={setMinimo} keyboardType="number-pad"/>
       <Text style={s.label}>Preço</Text>
       <TextInput style={s.input} value={preco} onChangeText={setPreco} keyboardType="decimal-pad" placeholder="0,00"/>
-      <Text style={s.label}>Foto URL (opcional)</Text>
-      <TextInput style={s.input} value={foto} onChangeText={setFoto} autoCapitalize="none"/>
 
       <View style={[s.linha,{marginTop:8,marginBottom:30}]}>
         <Botao texto="Voltar" claro onPress={voltar}/>
